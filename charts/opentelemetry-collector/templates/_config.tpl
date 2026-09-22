@@ -3175,6 +3175,9 @@ sending_queue:
   {{- if hasKey . "queueSize" }}
   queue_size: {{ .queueSize }}
   {{- end }}
+  {{- if .storage }}
+  storage: {{ .storage | quote }}
+  {{- end }}
   {{- with .batch }}
   batch:
     {{- if .flushTimeout }}

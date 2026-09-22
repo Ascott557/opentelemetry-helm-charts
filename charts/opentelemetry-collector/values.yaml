@@ -662,8 +662,9 @@ presets:
       enabled: false                # fail fast so a Databricks outage never back-pressures the Coralogix leg
     sendingQueue:
       enabled: true
-      queueSize: 50
+      queueSize: 50                 # ~80 s at one batch/s per signal: a Databricks outage shorter than that drops rows on the Databricks leg only; a longer one back-pressures the Coralogix leg (see README)
       numConsumers: 4
+      # storage: file_storage/zerobus   # persist the queue across restarts; declare the extension under config.extensions and list it in config.service.extensions
 
   # Configures grouping spans into transactions and enabling Coralogix transaction processor.
   transactions:

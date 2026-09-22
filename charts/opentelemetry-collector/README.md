@@ -956,9 +956,14 @@ The preset uses OTLP/HTTP rather than OTLP/gRPC on purpose: the `User-Agent` hea
 (`system.access.audit` with `service_name = 'zerobus'`), whereas the gRPC client replaces custom
 `User-Agent` headers with its own.
 
-By default the Zerobus exporters run with `retry_on_failure` disabled, a 10s timeout and a small
-sending queue, so a Databricks outage drops data on that leg instead of back-pressuring the
-Coralogix exporter. Tune `retryOnFailure`, `sendingQueue` and `timeout` to change that trade-off.
+By default the Zerobus exporters run with `retry_on_failure` disabled, a 10s timeout and a 50-deep
+in-memory sending queue. A Databricks outage shorter than that queue window (about 80 seconds at one
+batch per second per signal) drops data on the Databricks leg only; a longer or slower outage fills
+the queue, and from then on the pipeline fan-out returns errors to the upstream collector, whose
+retries can duplicate rows in Coralogix. Size `sendingQueue.queueSize` to the outage you accept and
+set `sendingQueue.storage` to a storage extension (for example `file_storage/zerobus`, declared under
+`config.extensions` and listed in `config.service.extensions`) to keep the queue across restarts.
+Alert on the collector's `otelcol_exporter_enqueue_failed_*` for the `otlphttp/zerobus_*` exporters.
 See [examples/zerobus-exporter](./examples/zerobus-exporter) for the rendered configuration.
 
 ## CRDs
