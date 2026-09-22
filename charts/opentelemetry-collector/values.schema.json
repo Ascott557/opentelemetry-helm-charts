@@ -1684,6 +1684,146 @@
             }
           }
         },
+        "zerobusExporter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Specifies whether the collector should forward telemetry to Databricks Zerobus Ingest (native OTLP) alongside the Coralogix exporter.",
+              "type": "boolean"
+            },
+            "pipelines": {
+              "description": "Specifies which pipelines get a Zerobus exporter. Each selected signal gets its own otlphttp/zerobus_<signal> exporter and oauth2client/zerobus_<signal> extension.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "logs",
+                  "metrics",
+                  "traces"
+                ]
+              }
+            },
+            "workspaceUrl": {
+              "description": "Databricks workspace host without scheme, e.g. dbc-xxxx.cloud.databricks.com. Used for the OAuth token URL https://<workspaceUrl>/oidc/v1/token.",
+              "type": "string"
+            },
+            "workspaceId": {
+              "description": "Numeric Databricks workspace id, as a quoted string. Used for the Zerobus endpoint and the OAuth resource api://databricks/workspaces/<workspaceId>/zerobusDirectWriteApi.",
+              "type": "string"
+            },
+            "region": {
+              "description": "Databricks region, e.g. us-west-2. The endpoint is derived as https://<workspaceId>.zerobus.<region>.cloud.databricks.com unless endpoint is set.",
+              "type": "string"
+            },
+            "endpoint": {
+              "description": "Optional override of the full Zerobus OTLP/HTTP endpoint URL. When set, region is not used.",
+              "type": "string"
+            },
+            "catalog": {
+              "description": "Unity Catalog catalog that holds the target tables.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Unity Catalog schema that holds the target tables.",
+              "type": "string"
+            },
+            "tablePrefix": {
+              "description": "Table name prefix. Tables are <prefix>_logs, <prefix>_spans and <prefix>_metrics and must already exist with the Databricks OpenTelemetry v2 schema.",
+              "type": "string"
+            },
+            "clientId": {
+              "description": "OAuth client id of the Databricks service principal. Defaults to ${env:DATABRICKS_CLIENT_ID}.",
+              "type": "string"
+            },
+            "clientSecret": {
+              "description": "OAuth client secret of the Databricks service principal. Defaults to ${env:DATABRICKS_CLIENT_SECRET}.",
+              "type": "string"
+            },
+            "userAgent": {
+              "description": "User-Agent header sent to Zerobus. OTLP/HTTP is used so this value reaches the Databricks audit log.",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Per-request timeout of the Zerobus exporters, e.g. 10s.",
+              "type": "string"
+            },
+            "retryOnFailure": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "initialInterval": {
+                  "type": "string"
+                },
+                "maxInterval": {
+                  "type": "string"
+                },
+                "maxElapsedTime": {
+                  "type": "string"
+                },
+                "multiplier": {
+                  "type": "number"
+                }
+              }
+            },
+            "sendingQueue": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "numConsumers": {
+                  "type": "integer"
+                },
+                "waitForResult": {
+                  "type": "boolean"
+                },
+                "blockOnOverflow": {
+                  "type": "boolean"
+                },
+                "sizer": {
+                  "type": "string",
+                  "enum": [
+                    "bytes",
+                    "requests",
+                    "items"
+                  ]
+                },
+                "queueSize": {
+                  "type": "integer"
+                },
+                "batch": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "flushTimeout": {
+                      "type": "string"
+                    },
+                    "minSize": {
+                      "type": "integer"
+                    },
+                    "maxSize": {
+                      "type": "integer"
+                    },
+                    "sizer": {
+                      "type": "string",
+                      "enum": [
+                        "bytes",
+                        "requests",
+                        "items"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "transactions": {
           "type": "object",
           "additionalProperties": false,

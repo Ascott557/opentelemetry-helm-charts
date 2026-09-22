@@ -1,0 +1,275 @@
+---
+# Source: opentelemetry-collector/templates/configmap-agent.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-opentelemetry-collector-agent
+  namespace: default
+  labels:
+    helm.sh/chart: opentelemetry-collector-0.138.3
+    app.kubernetes.io/name: opentelemetry-collector
+    app.kubernetes.io/instance: example
+    app.kubernetes.io/version: "0.160.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  relay: |
+    exporters:
+      coralogix:
+        application_name: otel
+        application_name_attributes:
+        - k8s.namespace.name
+        - service.namespace
+        domain: coralogix.com
+        domain_settings:
+          keepalive:
+            enabled: true
+            permit_without_stream: false
+            time: 30s
+            timeout: 10s
+        logs:
+          headers:
+            X-Coralogix-Distribution: helm-otel-integration/1.0
+        metrics:
+          headers:
+            X-Coralogix-Distribution: helm-otel-integration/1.0
+        private_key: ${env:CORALOGIX_PRIVATE_KEY}
+        profiles:
+          headers:
+            X-Coralogix-Distribution: helm-otel-integration/1.0
+            x-coralogix-ingress: otlp/v1.10.0
+        sending_queue:
+          batch:
+            flush_timeout: 250ms
+            max_size: 2097152
+            min_size: 1048576
+            sizer: bytes
+          enabled: true
+          num_consumers: 20
+          queue_size: 209715200
+          sizer: bytes
+        subsystem_name: integration
+        subsystem_name_attributes:
+        - k8s.deployment.name
+        - k8s.statefulset.name
+        - k8s.daemonset.name
+        - k8s.cronjob.name
+        - service.name
+        timeout: 30s
+        traces:
+          headers:
+            X-Coralogix-Distribution: helm-otel-integration/1.0
+      debug: {}
+      otlphttp/zerobus_logs:
+        auth:
+          authenticator: oauth2client/zerobus_logs
+        endpoint: https://1234567890123456.zerobus.us-west-2.cloud.databricks.com
+        headers:
+          User-Agent: Coralogix_OTelCollector/0.2
+          x-databricks-zerobus-table-name: main.observability.otel_logs
+        retry_on_failure:
+          enabled: false
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 50
+        timeout: 10s
+      otlphttp/zerobus_metrics:
+        auth:
+          authenticator: oauth2client/zerobus_metrics
+        endpoint: https://1234567890123456.zerobus.us-west-2.cloud.databricks.com
+        headers:
+          User-Agent: Coralogix_OTelCollector/0.2
+          x-databricks-zerobus-table-name: main.observability.otel_metrics
+        retry_on_failure:
+          enabled: false
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 50
+        timeout: 10s
+      otlphttp/zerobus_traces:
+        auth:
+          authenticator: oauth2client/zerobus_traces
+        endpoint: https://1234567890123456.zerobus.us-west-2.cloud.databricks.com
+        headers:
+          User-Agent: Coralogix_OTelCollector/0.2
+          x-databricks-zerobus-table-name: main.observability.otel_spans
+        retry_on_failure:
+          enabled: false
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 50
+        timeout: 10s
+    extensions:
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+      oauth2client/zerobus_logs:
+        client_id: ${env:DATABRICKS_CLIENT_ID}
+        client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+        endpoint_params:
+          authorization_details:
+          - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"main"},{"type":"unity_catalog_privileges","privileges":["USE
+            SCHEMA"],"object_type":"SCHEMA","object_full_path":"main.observability"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"main.observability.otel_logs"}]'
+          resource:
+          - api://databricks/workspaces/1234567890123456/zerobusDirectWriteApi
+        scopes:
+        - all-apis
+        token_url: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com/oidc/v1/token
+      oauth2client/zerobus_metrics:
+        client_id: ${env:DATABRICKS_CLIENT_ID}
+        client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+        endpoint_params:
+          authorization_details:
+          - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"main"},{"type":"unity_catalog_privileges","privileges":["USE
+            SCHEMA"],"object_type":"SCHEMA","object_full_path":"main.observability"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"main.observability.otel_metrics"}]'
+          resource:
+          - api://databricks/workspaces/1234567890123456/zerobusDirectWriteApi
+        scopes:
+        - all-apis
+        token_url: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com/oidc/v1/token
+      oauth2client/zerobus_traces:
+        client_id: ${env:DATABRICKS_CLIENT_ID}
+        client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+        endpoint_params:
+          authorization_details:
+          - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"main"},{"type":"unity_catalog_privileges","privileges":["USE
+            SCHEMA"],"object_type":"SCHEMA","object_full_path":"main.observability"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"main.observability.otel_spans"}]'
+          resource:
+          - api://databricks/workspaces/1234567890123456/zerobusDirectWriteApi
+        scopes:
+        - all-apis
+        token_url: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com/oidc/v1/token
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      transform/prometheus:
+        error_mode: ignore
+        metric_statements:
+        - context: metric
+          statements:
+          - replace_pattern(metric.name, "_total$", "") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_process_cpu_seconds_seconds$", "otelcol_process_cpu_seconds")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_process_runtime_heap_alloc_bytes_bytes$",
+            "otelcol_process_runtime_heap_alloc_bytes") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_process_runtime_total_alloc_bytes_bytes$",
+            "otelcol_process_runtime_total_alloc_bytes") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_process_runtime_total_sys_memory_bytes_bytes$",
+            "otelcol_process_runtime_total_sys_memory_bytes") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_fileconsumer_open_files$", "otelcol_fileconsumer_open_files_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_fileconsumer_reading_files$", "otelcol_fileconsumer_reading_files_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_otelsvc_k8s_ip_lookup_miss$", "otelcol_otelsvc_k8s_ip_lookup_miss_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_otelsvc_k8s_pod_added$", "otelcol_otelsvc_k8s_pod_added_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_otelsvc_k8s_pod_updated$", "otelcol_otelsvc_k8s_pod_updated_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_otelsvc_k8s_pod_deleted$", "otelcol_otelsvc_k8s_pod_deleted_ratio")
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_accepted_log_records$",
+            "otelcol_processor_accepted_log_records") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_accepted_metric_points$",
+            "otelcol_processor_accepted_metric_points") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_accepted_spans$",
+            "otelcol_processor_accepted_spans") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_refused_log_records$",
+            "otelcol_processor_refused_log_records") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_refused_metric_points$",
+            "otelcol_processor_refused_metric_points") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_memory_limiter_refused_spans$",
+            "otelcol_processor_refused_spans") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - replace_pattern(metric.name, "^otelcol_processor_filter_spans\\.filtered$",
+            "otelcol_processor_filter_spans.filtered_ratio") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+        - context: resource
+          statements:
+          - set(resource.attributes["k8s.pod.ip"], resource.attributes["net.host.name"])
+            where resource.attributes["service.name"] == "opentelemetry-collector"
+          - delete_key(resource.attributes, "service_name") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+        - context: datapoint
+          statements:
+          - delete_key(datapoint.attributes, "service_name") where resource.attributes["service.name"]
+            == "opentelemetry-collector"
+          - delete_key(datapoint.attributes, "otel_scope_name") where datapoint.attributes["service.name"]
+            == "opentelemetry-collector"
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+            max_recv_msg_size_mib: 20
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: opentelemetry-collector
+            scrape_interval: 30s
+            static_configs:
+            - targets:
+              - ${env:MY_POD_IP}:8888
+    service:
+      extensions:
+      - health_check
+      - oauth2client/zerobus_logs
+      - oauth2client/zerobus_metrics
+      - oauth2client/zerobus_traces
+      pipelines:
+        logs:
+          exporters:
+          - debug
+          - coralogix
+          - otlphttp/zerobus_logs
+          processors:
+          - memory_limiter
+          receivers:
+          - otlp
+        metrics:
+          exporters:
+          - debug
+          - coralogix
+          - otlphttp/zerobus_metrics
+          processors:
+          - memory_limiter
+          - transform/prometheus
+          receivers:
+          - prometheus
+          - otlp
+        traces:
+          exporters:
+          - debug
+          - coralogix
+          - otlphttp/zerobus_traces
+          processors:
+          - memory_limiter
+          receivers:
+          - otlp
+      telemetry:
+        logs:
+          encoding: json
+        metrics:
+          readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: ${env:MY_POD_IP}
+                  port: 8888
+                  without_scope_info: false
+                  without_type_suffix: false
+                  without_units: false

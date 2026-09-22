@@ -1,0 +1,32 @@
+mode: daemonset
+global:
+  domain: coralogix.com
+  defaultApplicationName: otel
+  defaultSubsystemName: integration
+  version: "1.0"
+
+# The Databricks OAuth client credentials come from a Kubernetes Secret named databricks-zerobus.
+extraEnvs:
+  - name: DATABRICKS_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: databricks-zerobus
+        key: CLIENT_ID
+  - name: DATABRICKS_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: databricks-zerobus
+        key: CLIENT_SECRET
+
+presets:
+  coralogixExporter:
+    enabled: true
+    privateKey: ${env:CORALOGIX_PRIVATE_KEY}
+  zerobusExporter:
+    enabled: true
+    pipelines: ["all"]
+    workspaceUrl: dbc-xxxxxxxx-xxxx.cloud.databricks.com
+    workspaceId: "1234567890123456"
+    region: us-west-2
+    catalog: main
+    schema: observability

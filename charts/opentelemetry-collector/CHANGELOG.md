@@ -2,6 +2,11 @@
 
 ## OpenTelemetry Collector
 
+### v0.138.3 / 2026-09-22
+
+- [Feat] Add an opt-in `presets.zerobusExporter` preset that forwards logs, traces and metrics to Databricks Zerobus Ingest (native OTLP) alongside the Coralogix exporter. For each selected signal the chart renders one `otlphttp/zerobus_<signal>` exporter and one `oauth2client/zerobus_<signal>` extension whose OAuth token is down-scoped to a single Unity Catalog table (`<tablePrefix>_logs`, `<tablePrefix>_spans`, `<tablePrefix>_metrics`), registers the extension with the service and appends the exporter to that signal's pipeline. OTLP/HTTP is used instead of gRPC so the `User-Agent` header reaches the Databricks audit log. The target tables must already exist with the Databricks OpenTelemetry v2 schema. The Zerobus leg ships with `retry_on_failure` disabled and a small sending queue so a Databricks outage never back-pressures the Coralogix exporter.
+- [Fix] `validate-configs.sh` treats the `oauth2client` missing client id and client secret errors as expected, in line with the existing `CORALOGIX_PRIVATE_KEY` handling, since the Databricks credentials are injected from a Kubernetes Secret at runtime.
+
 ### v0.138.2 / 2026-09-15
 
 - [Feat] Add an opt-in `hardenedMode` preset. On Linux, it replaces the `hostMetrics` preset's full host root mount with specific read-only mounts for `/dev`, `/proc`, `/run/udev/data`, and `/sys`. It disables the filesystem scraper by default to avoid reporting the container filesystem as the host root. Other host filesystems can be enabled through `extraVolumes`, `extraVolumeMounts`, and explicit scraper configuration. Existing behavior remains the default.

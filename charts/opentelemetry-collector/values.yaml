@@ -641,6 +641,30 @@ presets:
     #     insecure: true
     tls: {}
 
+  # Forwards logs, traces and metrics to Databricks Zerobus Ingest (native OTLP) alongside the Coralogix exporter.
+  # One OTLP/HTTP exporter and one OAuth2 client-credentials extension per signal, each scoped to its Unity Catalog table.
+  # Tables must already exist with the Databricks OpenTelemetry v2 schema. OTLP/HTTP is used so the User-Agent reaches Databricks audit logs.
+  zerobusExporter:
+    enabled: false
+    pipelines: ["all"]              # any of logs, traces, metrics, or all
+    workspaceUrl: ""                # e.g. dbc-xxxx.cloud.databricks.com (no scheme)
+    workspaceId: ""                 # numeric workspace id, quoted
+    region: ""                      # e.g. us-west-2; the endpoint is https://<workspaceId>.zerobus.<region>.cloud.databricks.com
+    endpoint: ""                    # optional override of the full endpoint URL
+    catalog: ""
+    schema: ""
+    tablePrefix: "otel"             # tables <prefix>_logs, <prefix>_spans, <prefix>_metrics
+    clientId: "${env:DATABRICKS_CLIENT_ID}"
+    clientSecret: "${env:DATABRICKS_CLIENT_SECRET}"
+    userAgent: "Coralogix_OTelCollector/0.2"
+    timeout: 10s
+    retryOnFailure:
+      enabled: false                # fail fast so a Databricks outage never back-pressures the Coralogix leg
+    sendingQueue:
+      enabled: true
+      queueSize: 50
+      numConsumers: 4
+
   # Configures grouping spans into transactions and enabling Coralogix transaction processor.
   transactions:
     enabled: false

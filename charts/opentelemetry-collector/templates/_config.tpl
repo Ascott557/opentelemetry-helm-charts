@@ -277,6 +277,9 @@ Build config file for daemonset OpenTelemetry Collector
 {{- if .Values.presets.otlpExporter.enabled }}
 {{- $config = (include "opentelemetry-collector.applyOtlpExporterConfig" (dict "Values" $data "config" $config) | fromYaml) }}
 {{- end }}
+{{- if .Values.presets.zerobusExporter.enabled }}
+{{- $config = (include "opentelemetry-collector.applyZerobusExporterConfig" (dict "Values" $data "config" $config) | fromYaml) }}
+{{- end }}
 {{- if .Values.presets.otlpReceiver.enabled }}
 {{- $config = (include "opentelemetry-collector.applyOtlpReceiverConfig" (dict "Values" $data "config" $config) | fromYaml) }}
 {{- end }}
@@ -404,6 +407,9 @@ Build config file for deployment OpenTelemetry Collector
 {{- end }}
 {{- if .Values.presets.otlpExporter.enabled }}
 {{- $config = (include "opentelemetry-collector.applyOtlpExporterConfig" (dict "Values" $data "config" $config) | fromYaml) }}
+{{- end }}
+{{- if .Values.presets.zerobusExporter.enabled }}
+{{- $config = (include "opentelemetry-collector.applyZerobusExporterConfig" (dict "Values" $data "config" $config) | fromYaml) }}
 {{- end }}
 {{- if .Values.targetAllocator.enabled }}
 {{- $config = (include "opentelemetry-collector.applyTargetAllocatorConfig" (dict "Values" $data "config" $config) | fromYaml) }}
@@ -3200,6 +3206,115 @@ exporters:
     tls:
 {{ toYaml . | nindent 6 }}
     {{- end }}
+{{- end }}
+
+{{/*
+zerobusExporter: forward logs, traces and metrics to Databricks Zerobus Ingest (native OTLP).
+For each selected signal the chart renders one oauth2client/zerobus_<signal> extension, whose
+token is down-scoped to a single Unity Catalog table, and one otlphttp/zerobus_<signal> exporter
+that carries the table name and User-Agent headers. The extension is registered with the service
+and the exporter is appended to that signal's pipeline only. OTLP/HTTP is used instead of gRPC so
+the User-Agent header reaches the Databricks audit log.
+*/}}
+{{- define "opentelemetry-collector.applyZerobusExporterConfig" -}}
+{{- $zerobusConfig := include "opentelemetry-collector.zerobusExporterConfig" .Values | fromYaml -}}
+{{- $config := .config -}}
+{{- /* Extract names BEFORE merge, since mustMergeOverwrite modifies its first argument in place */ -}}
+{{- $extensionNames := keys ($zerobusConfig.extensions | default dict) | sortAlpha }}
+{{- $_ := set $config "extensions" (mustMergeOverwrite ($zerobusConfig.extensions | default dict) ($config.extensions | default dict)) -}}
+{{- $_ := set $config "exporters" (mustMergeOverwrite ($zerobusConfig.exporters | default dict) ($config.exporters | default dict)) -}}
+{{- /* Register every oauth2client/zerobus_<signal> extension with the service, keeping the existing ones */ -}}
+{{- $extensions := $config.service.extensions | default (list) }}
+{{- range $extensionName := $extensionNames }}
+  {{- if not (has $extensionName $extensions) }}
+    {{- $extensions = append $extensions $extensionName }}
+  {{- end }}
+{{- end }}
+{{- $_ := set $config.service "extensions" $extensions }}
+{{- /* Append each otlphttp/zerobus_<signal> exporter to its own pipeline only */ -}}
+{{- $pipelines := $config.service.pipelines | default dict }}
+{{- range $signal := list "logs" "metrics" "traces" }}
+  {{- $exporterName := printf "otlphttp/zerobus_%s" $signal }}
+  {{- $pipeline := get $pipelines $signal }}
+  {{- if and (hasKey $config.exporters $exporterName) $pipeline }}
+    {{- $exporters := $pipeline.exporters | default (list) }}
+    {{- if not (has $exporterName $exporters) }}
+      {{- $_ := set $pipeline "exporters" (append $exporters $exporterName | uniq) }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- $config | toYaml }}
+{{- end }}
+
+{{- define "opentelemetry-collector.zerobusExporterConfig" -}}
+{{- $zerobus := .Values.presets.zerobusExporter }}
+{{- $workspaceUrl := required "presets.zerobusExporter.workspaceUrl must be set when the zerobusExporter preset is enabled." $zerobus.workspaceUrl }}
+{{- $workspaceId := required "presets.zerobusExporter.workspaceId must be set when the zerobusExporter preset is enabled." $zerobus.workspaceId }}
+{{- $catalog := required "presets.zerobusExporter.catalog must be set when the zerobusExporter preset is enabled." $zerobus.catalog }}
+{{- $schema := required "presets.zerobusExporter.schema must be set when the zerobusExporter preset is enabled." $zerobus.schema }}
+{{- $endpoint := $zerobus.endpoint }}
+{{- if not $endpoint }}
+  {{- $region := required "presets.zerobusExporter.region or presets.zerobusExporter.endpoint must be set when the zerobusExporter preset is enabled." $zerobus.region }}
+  {{- $endpoint = printf "https://%s.zerobus.%s.cloud.databricks.com" $workspaceId $region }}
+{{- end }}
+{{- $pipelines := $zerobus.pipelines | default (list "all") }}
+{{- $tablePrefix := $zerobus.tablePrefix | default "otel" }}
+{{- $tableSuffixes := dict "logs" "logs" "traces" "spans" "metrics" "metrics" }}
+{{- $signals := list }}
+{{- range $signal := list "logs" "traces" "metrics" }}
+  {{- if or (has "all" $pipelines) (has $signal $pipelines) }}
+    {{- $signals = append $signals $signal }}
+  {{- end }}
+{{- end }}
+{{- if $signals }}
+extensions:
+{{- range $signal := $signals }}
+{{- $table := printf "%s.%s.%s_%s" $catalog $schema $tablePrefix (get $tableSuffixes $signal) }}
+  oauth2client/zerobus_{{ $signal }}:
+    client_id: {{ $zerobus.clientId | quote }}
+    client_secret: {{ $zerobus.clientSecret | quote }}
+    token_url: {{ printf "https://%s/oidc/v1/token" $workspaceUrl | quote }}
+    scopes: ["all-apis"]
+    endpoint_params:
+      resource: [{{ printf "api://databricks/workspaces/%s/zerobusDirectWriteApi" $workspaceId | quote }}]
+      # One-element list on purpose: a plain string would be split on commas by the collector's config loader.
+      authorization_details:
+        - {{ printf `[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"%s"},{"type":"unity_catalog_privileges","privileges":["USE SCHEMA"],"object_type":"SCHEMA","object_full_path":"%s.%s"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"%s"}]` $catalog $catalog $schema $table | quote }}
+{{- end }}
+exporters:
+{{- range $signal := $signals }}
+{{- $table := printf "%s.%s.%s_%s" $catalog $schema $tablePrefix (get $tableSuffixes $signal) }}
+  otlphttp/zerobus_{{ $signal }}:
+    endpoint: {{ $endpoint | quote }}
+    auth:
+      authenticator: oauth2client/zerobus_{{ $signal }}
+    headers:
+      x-databricks-zerobus-table-name: {{ $table | quote }}
+      User-Agent: {{ $zerobus.userAgent | default "Coralogix_OTelCollector/0.2" | quote }}
+    timeout: {{ $zerobus.timeout | default "10s" | quote }}
+    {{- with $zerobus.retryOnFailure }}
+    retry_on_failure:
+      {{- if hasKey . "enabled" }}
+      enabled: {{ .enabled }}
+      {{- end }}
+      {{- if .initialInterval }}
+      initial_interval: {{ .initialInterval | quote }}
+      {{- end }}
+      {{- if .maxInterval }}
+      max_interval: {{ .maxInterval | quote }}
+      {{- end }}
+      {{- if hasKey . "maxElapsedTime" }}
+      max_elapsed_time: {{ .maxElapsedTime | quote }}
+      {{- end }}
+      {{- if hasKey . "multiplier" }}
+      multiplier: {{ .multiplier }}
+      {{- end }}
+    {{- end }}
+    {{- with $zerobus.sendingQueue }}
+    {{ include "opentelemetry-collector.coralogixSendingQueueConfig" . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{- define "opentelemetry-collector.applyCoralogixExporterConfig" -}}

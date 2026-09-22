@@ -143,6 +143,9 @@ should_ignore_errors() {
         "CORALOGIX_PRIVATE_KEY.*not specified"
         "domain.*not specified, please fix the configuration"
         "private_key.*not specified, please fix the configuration"
+        # Databricks Zerobus credentials (presets.zerobusExporter) are injected from a Secret at runtime
+        "no ClientID provided in the OAuth2 exporter configuration"
+        "no ClientSecret provided in OAuth Client Credentials configuration"
         "profiling signal support is at alpha level"
         "gated under the.*profilesSupport.*feature gate"
         "Could not load cluster config"

@@ -895,6 +895,72 @@ presets:
       permit_without_stream: false
 ```
 
+### Configuration for Databricks Zerobus exporter
+
+The `zerobusExporter` preset forwards logs, traces and metrics to Databricks Zerobus Ingest over
+native OTLP, alongside the Coralogix exporter. For each selected signal the chart renders one
+`otlphttp/zerobus_<signal>` exporter and one `oauth2client/zerobus_<signal>` extension. Each
+extension requests an OAuth token that is down-scoped to a single Unity Catalog table
+(`<tablePrefix>_logs`, `<tablePrefix>_spans` or `<tablePrefix>_metrics`), so a leaked token for one
+signal cannot write to another table.
+
+Before enabling the preset:
+
+- Create the target tables in Unity Catalog with the Databricks OpenTelemetry v2 table schema.
+  Zerobus writes into existing tables only; it does not create them.
+- Create a Databricks service principal with an OAuth secret and grant it `USE CATALOG` on the
+  catalog, `USE SCHEMA` on the schema, and `SELECT` and `MODIFY` on the tables. The preset requests
+  exactly those privileges per table.
+- Store the service principal credentials in a Kubernetes Secret and expose them to the collector
+  as `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`. The chart never renders the secret
+  values into the ConfigMap.
+
+```bash
+kubectl create secret generic databricks-zerobus \
+  --from-literal=CLIENT_ID=<service-principal-application-id> \
+  --from-literal=CLIENT_SECRET=<service-principal-oauth-secret>
+```
+
+```yaml
+extraEnvs:
+  - name: DATABRICKS_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: databricks-zerobus
+        key: CLIENT_ID
+  - name: DATABRICKS_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: databricks-zerobus
+        key: CLIENT_SECRET
+
+presets:
+  coralogixExporter:
+    enabled: true
+  zerobusExporter:
+    enabled: true
+    pipelines: ["all"]                # any of logs, traces, metrics, or all
+    workspaceUrl: dbc-xxxxxxxx-xxxx.cloud.databricks.com
+    workspaceId: "1234567890123456"   # quoted, so Helm keeps every digit
+    region: us-west-2
+    catalog: main
+    schema: observability
+```
+
+The Zerobus endpoint is derived as `https://<workspaceId>.zerobus.<region>.cloud.databricks.com`.
+Set `endpoint` to override it. The OAuth token URL is `https://<workspaceUrl>/oidc/v1/token`. The
+default `tablePrefix` is `otel`, which matches the table names in the Databricks documentation.
+
+The preset uses OTLP/HTTP rather than OTLP/gRPC on purpose: the `User-Agent` header (default
+`Coralogix_OTelCollector/0.2`, configurable through `userAgent`) reaches the Databricks audit log
+(`system.access.audit` with `service_name = 'zerobus'`), whereas the gRPC client replaces custom
+`User-Agent` headers with its own.
+
+By default the Zerobus exporters run with `retry_on_failure` disabled, a 10s timeout and a small
+sending queue, so a Databricks outage drops data on that leg instead of back-pressuring the
+Coralogix exporter. Tune `retryOnFailure`, `sendingQueue` and `timeout` to change that trade-off.
+See [examples/zerobus-exporter](./examples/zerobus-exporter) for the rendered configuration.
+
 ## CRDs
 
 At this time, Prometheus CRDs are supported but other CRDs are not.
